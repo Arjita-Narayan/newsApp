@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import NewsItem from "./NewsItem";
-import Spin from "./Spin"; // Ensure this is correctly imported
+import Spin from "./Spin";
 import PropTypes from "prop-types";
 import InfiniteScroll from "react-infinite-scroll-component";
 
-const News = (props) => {
+const News = ({ country = "us", category = "general", apiKey, pageSize = 8 }) => {
+
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -14,83 +15,74 @@ const News = (props) => {
     return string.charAt(0).toUpperCase() + string.slice(1);
   };
 
-  const updateNews = async () => {
-    const url = `https://newsapi.org/v2/top-headlines?country=${props.country}&category=${props.category}&apiKey=${props.apiKey}&page=${page}&pageSize=${props.pageSize}`;
+  const updateNews = useCallback(async (pageNumber) => {
+    const url = `https://newsapi.org/v2/top-headlines?country=${country}&category=${category}&apiKey=${apiKey}&page=${pageNumber}&pageSize=${pageSize}`;
     setLoading(true);
     let data = await fetch(url);
     let parsedData = await data.json();
-    setArticles(parsedData.articles);
-    setTotalResults(parsedData.totalResults);
+    
+    // Avoid duplicates by checking for existing articles
+    setArticles((prevArticles) => {
+      const newArticles = parsedData.articles || [];
+      const uniqueArticles = newArticles.filter(
+        (newArticle) => !prevArticles.some((article) => article.url === newArticle.url)
+      );
+      return [...prevArticles, ...uniqueArticles];
+    });
+    setTotalResults(parsedData.totalResults || 0);
     setLoading(false);
-  };
+  }, [country, category, apiKey, pageSize]); 
+
   useEffect(() => {
-    document.title = `${capitalizeFirstLetter(props.category)} - NewsMonkey`;
-    updateNews();
-  }, []);
+    updateNews(page); 
+  }, [category, page, updateNews]); 
 
   const fetchMoreData = async () => {
-    const url = `https://newsapi.org/v2/top-headlines?country=${
-      props.country
-    }&category=${props.category}&apiKey=${props.apiKey}&page=${
-      page + 1
-    }&pageSize=${props.pageSize}`;
-    setPage(page + 1);
-
-    let data = await fetch(url);
-    let parsedData = await data.json();
-    setArticles(articles.concat(parsedData.articles));
-    setTotalResults(parsedData.totalResults);
+    const nextPage = page + 1;
+    await updateNews(nextPage); 
+    setPage(nextPage); 
   };
 
   return (
     <div className="container my-3">
-      <h1
-        className="text-center"
-        style={{ margin: "35px 0px", marginTop: "90px" }}
-      >
-        NewsMonkey - Top {capitalizeFirstLetter(props.category)} Headlines
+      <h1 className="text-center" style={{ margin: "35px 0px", marginTop: "90px" }}>
+        NewsMonkey - Top {capitalizeFirstLetter(category)} Headlines
       </h1>
 
       {loading && <Spin />}
+
       <InfiniteScroll
         dataLength={articles.length}
         next={fetchMoreData}
-        hasMore={articles.length !== totalResults}
+        hasMore={articles.length < totalResults && !loading} // Prevent duplicate fetching
         loader={<Spin />}
       >
-        <div className="container">
-          <div className="row">
-            {articles.map((element) => {
-              return (
-                <div className="col-md-4" key={element.url}>
-                  <NewsItem
-                    title={element.title ? element.title : ""}
-                    description={element.description ? element.description : ""}
-                    imageUrl={element.urlToImage}
-                    newsUrl={element.url}
-                    author={element.author}
-                    date={element.publishedAt}
-                  />
-                </div>
-              );
-            })}
-          </div>
+        <div className="row">
+          {articles.map((element) => (
+            <div className="col-md-4" key={element.url}>
+
+              <NewsItem
+                title={element.title || ""}
+                description={element.description || ""}
+                imageUrl={element.urlToImage}
+                newsUrl={element.url}
+                author={element.author}
+                date={element.publishedAt}
+              />
+
+            </div>
+          ))}
         </div>
       </InfiniteScroll>
     </div>
   );
 };
 
-News.defaultProps = {
-  country: "in",
-  pageSize: 8,
-  category: "general",
-};
-
 News.propTypes = {
   country: PropTypes.string,
   pageSize: PropTypes.number,
   category: PropTypes.string,
+  apiKey: PropTypes.string.isRequired,
 };
 
 export default News;
